@@ -3,16 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Interactive Solar System - Three.js</title>
+    <title>Interactive Solar System - Textures & Info</title>
     <style>
         body {
             margin: 0;
-            overflow: hidden; /* Prevent scrollbars */
+            overflow: hidden;
             background-color: #000;
             color: white;
             font-family: sans-serif;
         }
-        #info {
+        #info { /* Basic instructions */
             position: absolute;
             top: 10px;
             left: 10px;
@@ -20,60 +20,101 @@
             padding: 5px 10px;
             border-radius: 3px;
             font-size: 12px;
+            z-index: 10;
         }
-        #label {
+        #label { /* Planet name on hover */
             position: absolute;
             background-color: rgba(0, 0, 0, 0.7);
             color: #fff;
-            padding: 5px 10px;
+            padding: 4px 8px;
             border-radius: 5px;
-            font-size: 14px;
-            pointer-events: none; /* Important: Allows clicks to pass through */
-            visibility: hidden; /* Hidden by default */
+            font-size: 13px;
+            pointer-events: none;
+            visibility: hidden;
             white-space: nowrap;
+            z-index: 10;
         }
+        #planet-info { /* Detailed info panel */
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background-color: rgba(0, 0, 0, 0.75);
+            color: #fff;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 12px;
+            pointer-events: none;
+            visibility: hidden;
+            max-width: 250px; /* Limit width */
+            z-index: 10;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+         #planet-info h3 {
+             margin-top: 0;
+             margin-bottom: 8px;
+             font-size: 14px;
+             color: #ffc107; /* Yellowish title */
+         }
+         #planet-info p {
+             margin-bottom: 5px;
+             line-height: 1.4;
+         }
+
         canvas {
-            display: block; /* Remove potential space below canvas */
+            display: block;
         }
     </style>
 </head>
 <body>
     <div id="info">Interactive Solar System | Hover over planets</div>
     <div id="label">Planet Name</div>
+    <div id="planet-info">
+        <!-- Content will be injected here by JS -->
+    </div>
     <div id="container"></div>
 
-    <!-- Import map for Three.js ES Modules -->
+    <!-- Use local files - make sure these exist! -->
     <script type="importmap">
-        {
-          "imports": {
-            "three": "./js/three.module.js",
-            "three/addons/": "./js/examples/jsm/"
-          }
+      {
+        "imports": {
+          "three": "./js/three.module.js",
+          "three/addons/": "./js/examples/jsm/"
         }
-      </script>
+      }
+    </script>
+    <!-- OR use a CDN if local files aren't working -->
+    <!-- <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+      }
+    </script> -->
+
 
     <!-- Main Three.js Logic -->
     <script type="module">
-        // NOTE: No changes are needed in this JavaScript part itself
-        // because the importmap handles the path resolution.
         import * as THREE from 'three';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
         let scene, camera, renderer, controls;
         let sun, starField;
-        const planets = []; // To hold planet meshes for raycasting
-        const planetData = []; // To hold data like name, orbit speed, mesh, group
-        let labelElement;
+        const planets = []; // Holds interactable meshes (planets + sun)
+        const planetData = []; // Holds detailed data objects
+        let labelElement, planetInfoElement; // DOM elements
         let raycaster, mouse;
         let hoveredObject = null;
         const clock = new THREE.Clock();
+        const textureLoader = new THREE.TextureLoader(); // Instantiate loader
 
-        const SOLAR_SYSTEM_SCALE = 150; // General scale factor for distances/sizes
+        const SOLAR_SYSTEM_SCALE = 150;
 
         // --- Initialization ---
         function init() {
             const container = document.getElementById('container');
             labelElement = document.getElementById('label');
+            planetInfoElement = document.getElementById('planet-info');
 
             // Scene
             scene = new THREE.Scene();
@@ -89,50 +130,77 @@
             container.appendChild(renderer.domElement);
 
             // Lighting
-            const ambientLight = new THREE.AmbientLight(0x404040, 1.5); // Uses your increased intensity
+            const ambientLight = new THREE.AmbientLight(0x333333, 1.5); // Slightly darker ambient
             scene.add(ambientLight);
 
-            // Sun (acts as point light source)
-            const sunGeometry = new THREE.SphereGeometry(SOLAR_SYSTEM_SCALE * 0.1, 32, 32);
-            // Uses your updated material
-            const sunMaterial = new THREE.MeshBasicMaterial({
-                color: 0xffff00,
-                emissive: 0xffff00, // Emissive makes it 'glow' independently of light
-                emissiveIntensity: 1.0
-            });
+            // --- Sun ---
+            const sunGeometry = new THREE.SphereGeometry(SOLAR_SYSTEM_SCALE * 0.1, 64, 32); // Higher detail
+            // Placeholder texture URL - replace with your own/local one
+            const sunTextureUrl = 'https://img.gs/kjrgpioqcs/128/https://solarsystem.nasa.gov/system/resources/detail_files/618_800x800_sun.png'; // Example low-res proxy
+            const sunTexture = textureLoader.load(sunTextureUrl);
+            const sunMaterial = new THREE.MeshBasicMaterial({ map: sunTexture }); // Basic material, texture supplies color/light
             sun = new THREE.Mesh(sunGeometry, sunMaterial);
-            sun.userData = { name: "Sun" }; // Add name for label
+            const sunDescription = `<h3>Sun</h3><p>The star at the center of our Solar System. A nearly perfect ball of hot plasma.</p><p>Diameter: ~1.4 million km</p><p>Surface Temp: ~5,500 °C</p>`;
+            sun.userData = { name: "Sun", description: sunDescription };
             scene.add(sun);
             planets.push(sun); // Add sun to interactable objects
 
-            const pointLight = new THREE.PointLight(0xffffff, 5, SOLAR_SYSTEM_SCALE * 100); // Uses your increased intensity
+            // Point Light originating from the Sun
+            const pointLight = new THREE.PointLight(0xffffff, 2.5, SOLAR_SYSTEM_SCALE * 100); // Stronger light
             sun.add(pointLight); // Attach light to the sun mesh
 
-            // Create Planets (No changes needed here)
-            createPlanet("Mercury", 0.005, 0xaaaaaa, 0.39, 4.15);
-            createPlanet("Venus", 0.012, 0xd4a46a, 0.72, 1.62);
-            createPlanet("Earth", 0.013, 0x4f86f7, 1.0, 1.0);
-            createPlanet("Mars", 0.007, 0xc1440e, 1.52, 0.53);
-            createPlanet("Jupiter", 0.14, 0xcf8f6a, 5.2, 0.084);
-            createPlanet("Saturn", 0.12, 0xe3dccb, 9.58, 0.034);
-            createPlanet("Uranus", 0.05, 0xafdbf5, 19.22, 0.012);
-            createPlanet("Neptune", 0.049, 0x3f54ba, 30.05, 0.006);
 
-            // Create Starfield (No changes needed here)
+            // --- Create Planets ---
+            // Using placeholder texture URLs. Replace with better/local URLs.
+            createPlanet("Mercury", 0.005, 0.39, 4.15,
+                'https://img.gs/kjrgpioqcs/64/https://solarsystem.nasa.gov/system/resources/detail_files/594_PIA19399_detail.jpg',
+                `<h3>Mercury</h3><p>The smallest planet and closest to the Sun. Very thin atmosphere.</p><p>Diameter: ~4,880 km</p><p>Avg Dist: 58 million km</p><p>Orbit: 88 Earth days</p>`
+            );
+            createPlanet("Venus", 0.012, 0.72, 1.62,
+                'https://img.gs/kjrgpioqcs/128/https://solarsystem.nasa.gov/system/resources/detail_files/599_PIA00104_detail.jpg',
+                 `<h3>Venus</h3><p>Similar in size to Earth but with a thick, toxic atmosphere. Hottest planet.</p><p>Diameter: ~12,104 km</p><p>Avg Dist: 108 million km</p><p>Orbit: 225 Earth days</p>`
+            );
+            createPlanet("Earth", 0.013, 1.0, 1.0,
+                'https://img.gs/kjrgpioqcs/128/https://solarsystem.nasa.gov/system/internal_resources/details/original/18_earth_detail.jpg',
+                 `<h3>Earth</h3><p>Our home planet, the only place known to harbor life. Has liquid water on its surface.</p><p>Diameter: ~12,742 km</p><p>Avg Dist: 150 million km</p><p>Orbit: 365.25 Earth days</p>`
+            );
+            createPlanet("Mars", 0.007, 1.52, 0.53,
+                'https://img.gs/kjrgpioqcs/128/https://solarsystem.nasa.gov/system/resources/detail_files/684_mars-globe-viking-mosaic-br.jpg',
+                 `<h3>Mars</h3><p>The "Red Planet," known for its iron oxide surface. Has polar ice caps and the largest volcano.</p><p>Diameter: ~6,779 km</p><p>Avg Dist: 228 million km</p><p>Orbit: 687 Earth days</p>`
+            );
+            createPlanet("Jupiter", 0.14, 5.2, 0.084,
+                'https://img.gs/kjrgpioqcs/256/https://solarsystem.nasa.gov/system/resources/detail_files/605_PIA21980_detail.jpg',
+                 `<h3>Jupiter</h3><p>The largest planet, a gas giant with a prominent Great Red Spot storm.</p><p>Diameter: ~139,820 km</p><p>Avg Dist: 778 million km</p><p>Orbit: ~12 Earth years</p>`
+            );
+            createPlanet("Saturn", 0.12, 9.58, 0.034,
+                'https://img.gs/kjrgpioqcs/256/https://solarsystem.nasa.gov/system/resources/detail_files/614_PIA18307_detail.jpg',
+                 `<h3>Saturn</h3><p>Known for its stunning ring system, composed mostly of ice particles. Another gas giant.</p><p>Diameter: ~116,460 km</p><p>Avg Dist: 1.4 billion km</p><p>Orbit: ~29.5 Earth years</p>`
+                // Note: Rings not added in this example
+            );
+            createPlanet("Uranus", 0.05, 19.22, 0.012,
+                'https://img.gs/kjrgpioqcs/128/https://solarsystem.nasa.gov/system/resources/detail_files/616_PIA01362_detail.jpg',
+                 `<h3>Uranus</h3><p>An ice giant tilted on its side, likely due to a past collision. Has a faint ring system.</p><p>Diameter: ~50,724 km</p><p>Avg Dist: 2.9 billion km</p><p>Orbit: ~84 Earth years</p>`
+            );
+            createPlanet("Neptune", 0.049, 30.05, 0.006,
+                'https://img.gs/kjrgpioqcs/128/https://solarsystem.nasa.gov/system/resources/detail_files/618_PIA01492_detail.jpg',
+                 `<h3>Neptune</h3><p>The most distant planet, an ice giant with strong winds and a dark blue appearance.</p><p>Diameter: ~49,244 km</p><p>Avg Dist: 4.5 billion km</p><p>Orbit: ~165 Earth years</p>`
+            );
+
+            // Create Starfield
             createStarfield();
 
-            // Controls (No changes needed here)
+            // Controls
             controls = new OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
             controls.dampingFactor = 0.05;
             controls.minDistance = SOLAR_SYSTEM_SCALE * 0.2;
-            controls.maxDistance = SOLAR_SYSTEM_SCALE * 20;
+            controls.maxDistance = SOLAR_SYSTEM_SCALE * 25; // Increased max distance slightly
 
-            // Interaction (Raycaster) (No changes needed here)
+            // Interaction (Raycaster)
             raycaster = new THREE.Raycaster();
             mouse = new THREE.Vector2();
 
-            // Event Listeners (No changes needed here)
+            // Event Listeners
             window.addEventListener('resize', onWindowResize);
             window.addEventListener('mousemove', onMouseMove);
 
@@ -140,14 +208,22 @@
             animate();
         }
 
-        // --- Object Creation Functions --- (No changes needed here)
+        // --- Object Creation Functions ---
 
-        function createPlanet(name, radius, color, distance, orbitSpeed) {
-            const planetGeometry = new THREE.SphereGeometry(radius * SOLAR_SYSTEM_SCALE, 32, 16);
-            const planetMaterial = new THREE.MeshStandardMaterial({ color: color, roughness: 0.8, metalness: 0.1 });
+        function createPlanet(name, radius, distance, orbitSpeed, textureUrl, description) {
+            const planetGeometry = new THREE.SphereGeometry(radius * SOLAR_SYSTEM_SCALE, 32, 16); // Standard detail
+            const texture = textureLoader.load(textureUrl);
+            // Use MeshStandardMaterial for planets so they react to the sun's light
+            const planetMaterial = new THREE.MeshStandardMaterial({
+                map: texture,
+                roughness: 0.9, // Make planets less shiny
+                metalness: 0.1
+            });
             const planetMesh = new THREE.Mesh(planetGeometry, planetMaterial);
-            planetMesh.userData = { name: name }; // Store name for label
+            // Store detailed data in userData
+            planetMesh.userData = { name: name, description: description };
 
+            // Orbital mechanics same as before
             const orbitGroup = new THREE.Group();
             orbitGroup.add(planetMesh);
             scene.add(orbitGroup);
@@ -156,21 +232,20 @@
             planetMesh.position.x = distance * SOLAR_SYSTEM_SCALE * Math.cos(initialAngle);
             planetMesh.position.z = distance * SOLAR_SYSTEM_SCALE * Math.sin(initialAngle);
 
+            // Store data needed for animation AND the mesh itself
             planetData.push({
-                name: name,
-                mesh: planetMesh,
-                orbitGroup: orbitGroup,
+                mesh: planetMesh, // Reference to the mesh for easy access
                 distance: distance * SOLAR_SYSTEM_SCALE,
                 orbitSpeed: orbitSpeed * 0.05,
                 currentAngle: initialAngle
             });
-            planets.push(planetMesh);
+            planets.push(planetMesh); // Add mesh to interactable list
 
             const orbitPath = createOrbitPath(distance * SOLAR_SYSTEM_SCALE);
             scene.add(orbitPath);
         }
 
-        function createOrbitPath(radius) {
+        function createOrbitPath(radius) { // No changes needed
             const points = [];
             const segments = 128;
             for (let i = 0; i <= segments; i++) {
@@ -180,20 +255,22 @@
                 );
             }
             const geometry = new THREE.BufferGeometry().setFromPoints(points);
-            const material = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.2 });
+            const material = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.15 }); // Slightly fainter lines
             const line = new THREE.LineLoop(geometry, material);
             return line;
         }
 
 
-        function createStarfield() {
-            const starCount = 10000;
+        function createStarfield() { // No changes needed
+            const starCount = 15000; // More stars
             const vertices = [];
             for (let i = 0; i < starCount; i++) {
-                const x = THREE.MathUtils.randFloatSpread(SOLAR_SYSTEM_SCALE * 100);
-                const y = THREE.MathUtils.randFloatSpread(SOLAR_SYSTEM_SCALE * 100);
-                const z = THREE.MathUtils.randFloatSpread(SOLAR_SYSTEM_SCALE * 100);
-                if (Math.sqrt(x*x + y*y + z*z) < SOLAR_SYSTEM_SCALE * 20) continue;
+                const x = THREE.MathUtils.randFloatSpread(SOLAR_SYSTEM_SCALE * 150); // Spread further
+                const y = THREE.MathUtils.randFloatSpread(SOLAR_SYSTEM_SCALE * 150);
+                const z = THREE.MathUtils.randFloatSpread(SOLAR_SYSTEM_SCALE * 150);
+                 const dist = Math.sqrt(x*x + y*y + z*z);
+                // Ensure stars are distant enough & not clumped too close
+                if (dist < SOLAR_SYSTEM_SCALE * 30) continue;
                  vertices.push(x, y, z);
             }
 
@@ -202,17 +279,17 @@
 
             const material = new THREE.PointsMaterial({
                 color: 0xffffff,
-                size: SOLAR_SYSTEM_SCALE * 0.02,
+                size: SOLAR_SYSTEM_SCALE * 0.015, // Slightly smaller stars
                 sizeAttenuation: true,
                 transparent: true,
-                opacity: 0.8
+                opacity: 0.75
             });
 
             starField = new THREE.Points(geometry, material);
             scene.add(starField);
         }
 
-        // --- Event Handlers --- (No changes needed here)
+        // --- Event Handlers --- // No changes needed
 
         function onWindowResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
@@ -225,64 +302,92 @@
             mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
         }
 
-        // --- Interaction and Label Update --- (No changes needed here)
+        // --- Interaction and Label/Info Update ---
 
         function checkIntersections() {
             raycaster.setFromCamera(mouse, camera);
-            const intersects = raycaster.intersectObjects(planets);
+            const intersects = raycaster.intersectObjects(planets); // Check against planet/sun meshes
 
             if (intersects.length > 0) {
-                if (hoveredObject !== intersects[0].object) {
-                    hoveredObject = intersects[0].object;
+                const intersectedObject = intersects[0].object;
+                // If hovering over a new object
+                if (hoveredObject !== intersectedObject) {
+                    hoveredObject = intersectedObject;
+                    // Update short label (name)
                     labelElement.textContent = hoveredObject.userData.name || 'Unknown';
                     labelElement.style.visibility = 'visible';
+                    // Update detailed info panel
+                    planetInfoElement.innerHTML = hoveredObject.userData.description || '';
+                    planetInfoElement.style.visibility = 'visible';
                 }
+                // Update short label position continuously while hovering
                 updateLabelPosition();
 
             } else {
+                // If not hovering over anything or moved off
                 if (hoveredObject) {
                     labelElement.style.visibility = 'hidden';
+                    planetInfoElement.style.visibility = 'hidden'; // Hide info panel too
                     hoveredObject = null;
                 }
             }
         }
 
+        // Update position for the small name label only
         function updateLabelPosition() {
             if (!hoveredObject) return;
 
             const vector = new THREE.Vector3();
-            hoveredObject.getWorldPosition(vector);
+            // Get the world position - use geometry center for better label placement
+            hoveredObject.geometry.computeBoundingSphere();
+            vector.copy(hoveredObject.geometry.boundingSphere.center);
+            hoveredObject.localToWorld(vector); // Convert local center to world coords
+
+            // Project to 2D screen coordinates
             vector.project(camera);
 
+            // Convert to CSS pixels
             const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
             const y = (vector.y * -0.5 + 0.5) * window.innerHeight;
 
-            labelElement.style.left = `${x + 15}px`;
-            labelElement.style.top = `${y}px`;
+            // Apply position, offset slightly above pointer
+            labelElement.style.left = `${x + 5}px`;
+            labelElement.style.top = `${y - 20}px`; // Move label above cursor
         }
 
 
-        // --- Animation Loop --- (No changes needed here)
+        // --- Animation Loop ---
         function animate() {
             requestAnimationFrame(animate);
             const delta = clock.getDelta();
 
-            controls.update();
+            controls.update(); // Necessary if damping is enabled
 
+            // Animate Planets Orbiting (using planetData array)
             planetData.forEach(p => {
                  p.currentAngle += p.orbitSpeed * delta;
                  const x = p.distance * Math.cos(p.currentAngle);
                  const z = p.distance * Math.sin(p.currentAngle);
-                 p.mesh.position.set(x, 0, z);
-                 p.mesh.rotation.y += delta * 0.5;
+                 p.mesh.position.set(x, 0, z); // Position the mesh
+
+                 // Add self-rotation (adjust speed as needed)
+                 p.mesh.rotation.y += delta * 0.1; // Slower rotation
             });
 
+             // Sun self-rotation (slower)
+            sun.rotation.y += delta * 0.02;
+
+
+            // Check for mouse hovering
             checkIntersections();
 
+            // Update label position if an object is hovered (needed if camera moves)
+            // Info panel position is fixed by CSS, so no update needed here
             if (hoveredObject) {
                 updateLabelPosition();
             }
 
+            // Render Scene
             renderer.render(scene, camera);
         }
 
