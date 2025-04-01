@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Solar System - Three.js</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden; /* Prevent scrollbars */
+            background-color: #000;
+            color: white;
+            font-family: sans-serif;
+        }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 5px 10px;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+        #label {
+            position: absolute;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: #fff;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 14px;
+            pointer-events: none; /* Important: Allows clicks to pass through */
+            visibility: hidden; /* Hidden by default */
+            white-space: nowrap;
+        }
+        canvas {
+            display: block; /* Remove potential space below canvas */
+        }
+    </style>
+</head>
+<body>
+    <div id="info">Interactive Solar System | Hover over planets</div>
+    <div id="label">Planet Name</div>
+    <div id="container"></div>
+
+    <!-- Import map for Three.js ES Modules -->
+    <script type="importmap">
+        {
+          "imports": {
+            "three": "./js/three.module.js",
+            "three/addons/": "./js/examples/jsm/"
+          }
+        }
+      </script>
+
+    <!-- Main Three.js Logic -->
+    <script type="module">
+        // NOTE: No changes are needed in this JavaScript part itself
+        // because the importmap handles the path resolution.
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        let scene, camera, renderer, controls;
+        let sun, starField;
+        const planets = []; // To hold planet meshes for raycasting
+        const planetData = []; // To hold data like name, orbit speed, mesh, group
+        let labelElement;
+        let raycaster, mouse;
+        let hoveredObject = null;
+        const clock = new THREE.Clock();
+
+        const SOLAR_SYSTEM_SCALE = 150; // General scale factor for distances/sizes
+
+        // --- Initialization ---
+        function init() {
+            const container = document.getElementById('container');
+            labelElement = document.getElementById('label');
+
+            // Scene
+            scene = new THREE.Scene();
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, SOLAR_SYSTEM_SCALE * 50);
+            camera.position.set(0, SOLAR_SYSTEM_SCALE * 0.8, SOLAR_SYSTEM_SCALE * 1.8);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            container.appendChild(renderer.domElement);
+
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0x404040, 1.5); // Uses your increased intensity
+            scene.add(ambientLight);
+
+            // Sun (acts as point light source)
+            const sunGeometry = new THREE.SphereGeometry(SOLAR_SYSTEM_SCALE * 0.1, 32, 32);
+            // Uses your updated material
+            const sunMaterial = new THREE.MeshBasicMaterial({
+                color: 0xffff00,
+                emissive: 0xffff00, // Emissive makes it 'glow' independently of light
+                emissiveIntensity: 1.0
+            });
+            sun = new THREE.Mesh(sunGeometry, sunMaterial);
+            sun.userData = { name: "Sun" }; // Add name for label
+            scene.add(sun);
+            planets.push(sun); // Add sun to interactable objects
+
+            const pointLight = new THREE.PointLight(0xffffff, 5, SOLAR_SYSTEM_SCALE * 100); // Uses your increased intensity
+            sun.add(pointLight); // Attach light to the sun mesh
+
+            // Create Planets (No changes needed here)
+            createPlanet("Mercury", 0.005, 0xaaaaaa, 0.39, 4.15);
+            createPlanet("Venus", 0.012, 0xd4a46a, 0.72, 1.62);
+            createPlanet("Earth", 0.013, 0x4f86f7, 1.0, 1.0);
+            createPlanet("Mars", 0.007, 0xc1440e, 1.52, 0.53);
+            createPlanet("Jupiter", 0.14, 0xcf8f6a, 5.2, 0.084);
+            createPlanet("Saturn", 0.12, 0xe3dccb, 9.58, 0.034);
+            createPlanet("Uranus", 0.05, 0xafdbf5, 19.22, 0.012);
+            createPlanet("Neptune", 0.049, 0x3f54ba, 30.05, 0.006);
+
+            // Create Starfield (No changes needed here)
+            createStarfield();
+
+            // Controls (No changes needed here)
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.minDistance = SOLAR_SYSTEM_SCALE * 0.2;
+            controls.maxDistance = SOLAR_SYSTEM_SCALE * 20;
+
+            // Interaction (Raycaster) (No changes needed here)
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+
+            // Event Listeners (No changes needed here)
+            window.addEventListener('resize', onWindowResize);
+            window.addEventListener('mousemove', onMouseMove);
+
+            // Start Animation Loop
+            animate();
+        }
+
+        // --- Object Creation Functions --- (No changes needed here)
+
+        function createPlanet(name, radius, color, distance, orbitSpeed) {
+            const planetGeometry = new THREE.SphereGeometry(radius * SOLAR_SYSTEM_SCALE, 32, 16);
+            const planetMaterial = new THREE.MeshStandardMaterial({ color: color, roughness: 0.8, metalness: 0.1 });
+            const planetMesh = new THREE.Mesh(planetGeometry, planetMaterial);
+            planetMesh.userData = { name: name }; // Store name for label
+
+            const orbitGroup = new THREE.Group();
+            orbitGroup.add(planetMesh);
+            scene.add(orbitGroup);
+
+            const initialAngle = Math.random() * Math.PI * 2;
+            planetMesh.position.x = distance * SOLAR_SYSTEM_SCALE * Math.cos(initialAngle);
+            planetMesh.position.z = distance * SOLAR_SYSTEM_SCALE * Math.sin(initialAngle);
+
+            planetData.push({
+                name: name,
+                mesh: planetMesh,
+                orbitGroup: orbitGroup,
+                distance: distance * SOLAR_SYSTEM_SCALE,
+                orbitSpeed: orbitSpeed * 0.05,
+                currentAngle: initialAngle
+            });
+            planets.push(planetMesh);
+
+            const orbitPath = createOrbitPath(distance * SOLAR_SYSTEM_SCALE);
+            scene.add(orbitPath);
+        }
+
+        function createOrbitPath(radius) {
+            const points = [];
+            const segments = 128;
+            for (let i = 0; i <= segments; i++) {
+                const theta = (i / segments) * Math.PI * 2;
+                points.push(
+                    new THREE.Vector3(Math.cos(theta) * radius, 0, Math.sin(theta) * radius)
+                );
+            }
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            const material = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.2 });
+            const line = new THREE.LineLoop(geometry, material);
+            return line;
+        }
+
+
+        function createStarfield() {
+            const starCount = 10000;
+            const vertices = [];
+            for (let i = 0; i < starCount; i++) {
+                const x = THREE.MathUtils.randFloatSpread(SOLAR_SYSTEM_SCALE * 100);
+                const y = THREE.MathUtils.randFloatSpread(SOLAR_SYSTEM_SCALE * 100);
+                const z = THREE.MathUtils.randFloatSpread(SOLAR_SYSTEM_SCALE * 100);
+                if (Math.sqrt(x*x + y*y + z*z) < SOLAR_SYSTEM_SCALE * 20) continue;
+                 vertices.push(x, y, z);
+            }
+
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+
+            const material = new THREE.PointsMaterial({
+                color: 0xffffff,
+                size: SOLAR_SYSTEM_SCALE * 0.02,
+                sizeAttenuation: true,
+                transparent: true,
+                opacity: 0.8
+            });
+
+            starField = new THREE.Points(geometry, material);
+            scene.add(starField);
+        }
+
+        // --- Event Handlers --- (No changes needed here)
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function onMouseMove(event) {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        }
+
+        // --- Interaction and Label Update --- (No changes needed here)
+
+        function checkIntersections() {
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(planets);
+
+            if (intersects.length > 0) {
+                if (hoveredObject !== intersects[0].object) {
+                    hoveredObject = intersects[0].object;
+                    labelElement.textContent = hoveredObject.userData.name || 'Unknown';
+                    labelElement.style.visibility = 'visible';
+                }
+                updateLabelPosition();
+
+            } else {
+                if (hoveredObject) {
+                    labelElement.style.visibility = 'hidden';
+                    hoveredObject = null;
+                }
+            }
+        }
+
+        function updateLabelPosition() {
+            if (!hoveredObject) return;
+
+            const vector = new THREE.Vector3();
+            hoveredObject.getWorldPosition(vector);
+            vector.project(camera);
+
+            const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+            const y = (vector.y * -0.5 + 0.5) * window.innerHeight;
+
+            labelElement.style.left = `${x + 15}px`;
+            labelElement.style.top = `${y}px`;
+        }
+
+
+        // --- Animation Loop --- (No changes needed here)
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+
+            controls.update();
+
+            planetData.forEach(p => {
+                 p.currentAngle += p.orbitSpeed * delta;
+                 const x = p.distance * Math.cos(p.currentAngle);
+                 const z = p.distance * Math.sin(p.currentAngle);
+                 p.mesh.position.set(x, 0, z);
+                 p.mesh.rotation.y += delta * 0.5;
+            });
+
+            checkIntersections();
+
+            if (hoveredObject) {
+                updateLabelPosition();
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // --- Start ---
+        init();
+
+    </script>
+</body>
+</html>
